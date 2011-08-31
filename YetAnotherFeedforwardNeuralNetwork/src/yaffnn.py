@@ -1,4 +1,6 @@
 import unittest
+import random
+
 class MalformedMatrix(Exception):
     def __init__(self, msg):
         self.msg = msg
@@ -11,13 +13,21 @@ class MismatchingDimensions(Exception):
         return str(self.msg)
 
 class Matrix:
+    """The idea behind this class is that you give the constructor a list, or
+    list of lists representing a 1D or 2D matrix, and it gives you an object
+    representing a 1D or 2D matrix with all the operations associated with
+    these sorts of matrices. It does NOT take block matrices though.
+    
+    All in all this class is like a very bad version of NumPy.
+    """
     def _isNum(self, s):
         """Tests if s is a number"""
         try:
             float(s)
             return True
-        except:
+        except ValueError:
             return False
+
     def _is1d(self, matrix):
         """Tests if the list given represents a '1d matrix'"""
         if all(map(self._isNum, matrix)):
@@ -59,13 +69,21 @@ class Matrix:
             if len(row) != numCols:
                 return False
         return True
-
-    def __init__(self, matrix=[]): 
+    
+    def __init__(self, matrix=None, rows=None, cols=None):
+        """The one that rules them all""" 
         self.matrix = [] # our internal representation of the matrix
-        if matrix == []:
-            self.dim = 0
-            self.rows = 0
-            self.cols = 0
+        
+        if matrix == None:
+            if rows != None and cols != None:
+                self.rows = rows
+                self.cols = cols
+                for i in range(rows*cols):
+                    self.matrix.append(0)
+            else:
+                self.dim = 0
+                self.rows = 0
+                self.cols = 0
         elif(self._is1d(matrix)):        
             self.dim = 1
             if isinstance(matrix[0], list):
@@ -76,8 +94,7 @@ class Matrix:
             else:
                 self.rows = 1
                 self.cols = len(matrix)
-                self.matrix = matrix[:]
-            
+                self.matrix = matrix[:] 
         elif(self._is2d(matrix)):
             self.dim = 2
             self.rows = len(matrix)
@@ -87,8 +104,8 @@ class Matrix:
         else:
             raise MalformedMatrix("Matrix has invalid dimensions or is a block matrix.")
 
-
     def __getitem__(self, key):
+        """Overloads the [] operator"""
         if self.dim == 1:
             return self.matrix[key]
         elif self.dim == 2:
@@ -96,9 +113,11 @@ class Matrix:
             return Matrix(self.matrix[indexStart:indexStart+self.cols])
         
     def __eq__(self, other):
+        """Allows == comparisons"""
         return self.matrix == other.matrix and self.rows == other.rows and self.cols == other.cols and self.dim == other.dim
     
     def __add__(self, other):
+        """Overloads the + operator"""
         if self.rows == other.rows and self.cols == other.cols:
             matrix = []
             for i in range(len(self.matrix)):
@@ -113,6 +132,7 @@ class Matrix:
             raise MismatchingDimensions("Dimensions of the matrices don't match.")
     
     def __sub__(self, other):
+        """Overloads the - operator"""
         if self.rows == other.rows and self.cols == other.cols:
             matrix = []
             for i in range(len(self.matrix)):
@@ -126,6 +146,8 @@ class Matrix:
             raise MismatchingDimensions("Dimensions of the matrices don't match")
         
     def __mul__(self, other):
+        """Overloads the * operator. Does matrix multiplication... I'll decide
+        whether scalar multiplication can work in here"""
         if not self.cols == other.rows:
             raise MismatchingDimensions("Rows of A not equal to Cols of B")
     
@@ -154,22 +176,82 @@ class Matrix:
         cols = self.cols
         self.cols = self.rows
         self.rows = cols
-
+    
+    def randomize(self):
+        for i in range(len(self.matrix)):
+            self.matrix[i] = random.random()
     
 class NeuralNetwork:
     """A feedforward neural network"""
     def __init__(self, topology):
-        # topology = [[inputs], #hidden nodes, ..., #hidden nodes, #outputs]
-        self.inputs = topology[0]
+        """Sets up relevant matrices/vectors for the neural network"""
+        # topology = [#inputs, #hidden nodes, ..., #hidden nodes, #outputs]
         self.topology = topology
-        for i in range(len(topology)):
-            #self.weightMatrices[i] =
-            None 
+
+        # each element of these vectors represents a node layer in the network
+        # each node layer is represented by a vector matrix
+        # each element in the vector matrix represents an individual node
+        # vectors in these lists are assumed as row vectors
+        self.inputVectorList = []
+        self.outputVectorList = []
+        self.deltaVectorList = []
         
-    topology = [] 
-    weightMatrices = [] # array of weight matrices
-    hiddenNodes = []
-    outputs = []
+        # each element of this list represents a weight matrix
+        # each weight matrix represents the connection weights between a node layer
+        self.weightMatrixList = []
+        
+        # initialize weight matrices, initial matrices are zeroed
+        for i in range(len(topology) - 1):
+            self.weightMatrixList.append(Matrix(rows=topology[i], cols=topology[i+1]))
+
+
+    def activationFunction(self, input):
+        """The activation function for each node"""
+        None
+        
+    def activationFunctionDerivative(self, input):
+        """The derivative of the activation function"""
+        None
+        
+    def forwardProp(self, input):
+        """
+        Forward propagate input through the network, storing inputs and
+        outputs for each node in the network
+        """
+        initialInput = Matrix(input)
+        # we have dummy node layer representing the initial input
+        self.inputVectorList.append(initialInput)
+        self.outputVectorList.append(initialInput)
+        
+        numWeightLayers = len(self.topology) - 1
+        currentInputList = []
+        for i in range(numWeightLayers):
+            for columnVector in self.weightMatrixList[i]:
+                currentInputList.append(self.outputVectorList[i] * columnVector)
+            currentInputVector = Matrix(currentInputList)
+            self.inputVectorList.append(Matrix(currentInputVector))
+            self.outputVectorList.append(self.activationFunction(Matrix(currentInputVector)))
+
+    def backwardProp(self, target):
+        """
+        Backward propagate outputs through the network, storing 'deltas' for
+        each node.
+        TODO: Things to check:
+        - that the size of the target vector matches the number of output nodes
+        - that the input, output vector lists have been initialized by
+        forwardProp
+        """
+        targetVector = Matrix(target)
+        
+        # calculate the initial deltas for the output layer
+        self.deltaVectorList.prepend(self.outputVectorList[-1] - targetVector)
+        numWeightLayers = len(self.topology) - 1
+        
+        for i in range(numWeightLayers):
+            deltaVector = self.weightMatrixList[-1 - i] * self.deltaVectorList[-1 - i].transpose()
+            deltaVector.transpose()
+            self.deltaVectorList[-1 - i].transpose()
+            self.deltaVectorList.prepend(deltaVector)
 
 class MatrixTest(unittest.TestCase):
     def testEmptyInit(self):
@@ -179,6 +261,30 @@ class MatrixTest(unittest.TestCase):
         self.assertEquals(m.rows, 0)
         self.assertEquals(m.cols, 0)
         self.assertEquals(m.matrix, [])
+        
+        
+    def testAssignment(self):
+        """Assign arbitrary numbers for elements"""
+        m = Matrix(row=2, col=2)
+        m[0][0] = 1
+        m[1][1] = 1
+        self.assertEquals(m[0][0], 1)
+        self.assertEquals(m[1][1], 1)
+        self.assertEquals(m[0][1], 0)
+        self.assertEquals(m[1][0], 0)
+        self.assertEquals(m, Matrix([[1,0], [0,1]]))
+        m = Matrix(row=2, col=2)
+        m[0] = [1, 0]
+        m[1] = [0, 1]
+        self.assertEquals(m[0], Matrix([1, 0]))
+        self.assertEquals(m[1], Matrix([0, 1]))
+        self.assertEquals(m, Matrix([[1,0], [0,1]]))
+        m = Matrix(row=2, col=2)
+        m[0] = [1, 0, 0]
+        m[1] = [0, 1, 0]
+        self.assertRaises(MismatchingDimensions, m.__setitem__, [1, 0, 0])
+        self.assertRaises(MismatchingDimensions, m.__setitem__, [1, 0, 0])
+        
 
     def test1DMatrixInit(self):
         """Matrix should be initialized to a 1D matrix"""
