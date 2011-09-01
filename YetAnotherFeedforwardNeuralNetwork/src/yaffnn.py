@@ -11,6 +11,16 @@ class MismatchingDimensions(Exception):
         self.msg = msg
     def __str__(self):
         return str(self.msg)
+class InvalidInput(Exception):
+    def __init__(self, msg):
+        self.msg = msg
+    def __str__(self):
+        return str(self.msg)
+class NotRectangular(Exception):
+    def __init__(self, msg):
+        self.msg = msg
+    def __str__(self):
+        return str(self.msg)
 
 class Matrix:
     """The idea behind this class is that you give the constructor a list, or
@@ -71,50 +81,74 @@ class Matrix:
         return True
     
     def __init__(self, matrix=None, rows=None, cols=None):
-        """The one that rules them all""" 
-        self.matrix = [] # our internal representation of the matrix
-        
-        if matrix == None:
-            if rows != None and cols != None:
-                self.rows = rows
-                self.cols = cols
-                for i in range(rows*cols):
-                    self.matrix.append(0)
-            else:
-                self.dim = 0
-                self.rows = 0
-                self.cols = 0
-        elif(self._is1d(matrix)):        
-            self.dim = 1
-            if isinstance(matrix[0], list):
-                self.rows = len(matrix)
-                self.cols = 1
-                for row in matrix:
-                    self.matrix += row
-            else:
-                self.rows = 1
-                self.cols = len(matrix)
-                self.matrix = matrix[:] 
-        elif(self._is2d(matrix)):
-            self.dim = 2
-            self.rows = len(matrix)
-            self.cols = len(matrix[0])
-            for row in matrix:
-                self.matrix += row
+        """The one that rules them all"""
+        # our internal representation of the matrix
+        self.matrix = []
+        # number of rows
+        self.rows = 0
+        # number of columns
+        self.cols = 0
+        # tensor order (0 order is scalar, but for this application it is
+        # empty matrix
+        self.order = 0
+
+        if matrix == None and rows != None and cols != None:
+            if (rows == 0 and cols != 0) or (rows != 0 and cols == 0):
+                raise InvalidInput("Rx0 or 0xC matrix")
+            elif rows < 0 or cols < 0:
+                raise InvalidInput("rows or cols is negative")
+            elif rows == 1 or cols == 1:
+                self.order = 1
+            elif rows > 1 and cols > 1:
+                self.order = 2
+            # else rows=0, cols=0 and order = 0 (default values)
+            self.rows = rows
+            self.cols = cols
+        elif matrix != None and rows == None and cols == None:
+            None
         else:
-            raise MalformedMatrix("Matrix has invalid dimensions or is a block matrix.")
+            raise InvalidInput("Either matrix is given or rows and cols are given, not both.")
+#        if matrix == None:
+#            if rows != None and cols != None:
+#                self.rows = rows
+#                self.cols = cols
+#                for i in range(rows*cols):
+#                    self.matrix.append(0)
+#            else:
+#                self.order = 0
+#                self.rows = 0
+#                self.cols = 0
+#        elif(self._is1d(matrix)):        
+#            self.order = 1
+#            if isinstance(matrix[0], list):
+#                self.rows = len(matrix)
+#                self.cols = 1
+#                for row in matrix:
+#                    self.matrix += row
+#            else:
+#                self.rows = 1
+#                self.cols = len(matrix)
+#                self.matrix = matrix[:] 
+#        elif(self._is2d(matrix)):
+#            self.order = 2
+#            self.rows = len(matrix)
+#            self.cols = len(matrix[0])
+#            for row in matrix:
+#                self.matrix += row
+#        else:
+#            raise MalformedMatrix("Matrix has invalid dimensions or is a block matrix.")
 
     def __getitem__(self, key):
         """Overloads the [] operator"""
-        if self.dim == 1:
+        if self.order == 1:
             return self.matrix[key]
-        elif self.dim == 2:
+        elif self.order == 2:
             indexStart = self.cols * key
             return Matrix(self.matrix[indexStart:indexStart+self.cols])
         
     def __eq__(self, other):
         """Allows == comparisons"""
-        return self.matrix == other.matrix and self.rows == other.rows and self.cols == other.cols and self.dim == other.dim
+        return self.matrix == other.matrix and self.rows == other.rows and self.cols == other.cols and self.order == other.order
     
     def __add__(self, other):
         """Overloads the + operator"""
@@ -124,7 +158,7 @@ class Matrix:
                 matrix.append(self.matrix[i] + other.matrix[i])
             # hack that uses knowledge of internal representation
             result = Matrix(matrix)
-            result.dim = self.dim
+            result.order = self.order
             result.rows = self.rows
             result.cols = self.cols
             return result
@@ -138,7 +172,7 @@ class Matrix:
             for i in range(len(self.matrix)):
                 matrix.append(self.matrix[i] - other.matrix[i])
             result = Matrix(matrix)
-            result.dim = self.dim
+            result.order = self.order
             result.rows = self.rows
             result.cols = self.cols
             return result
@@ -162,7 +196,7 @@ class Matrix:
                     sum += row[i]*col[i] 
                 matrix.append(sum)
         result = Matrix(matrix)
-        result.dim = 2
+        result.order = 2
         result.rows = self.rows
         result.cols = other.cols
         return result
@@ -254,101 +288,173 @@ class NeuralNetwork:
             self.deltaVectorList.prepend(deltaVector)
 
 class MatrixTest(unittest.TestCase):
-    def testEmptyInit(self):
-        """Matrix should be initialized to empty with no parameters""" 
+    def testEmptyMatrix(self):
+        """Matrix initialized with no parameters, or empty list"""
+        #Pass 
         m = Matrix()
-        self.assertEquals(m.dim, 0)
+        self.assertEquals(m.order, 0)
         self.assertEquals(m.rows, 0)
         self.assertEquals(m.cols, 0)
         self.assertEquals(m.matrix, [])
+        m = Matrix([])
+        self.assertEquals(m.order, 0)
+        self.assertEquals(m.rows, 0)
+        self.assertEquals(m.cols, 0)
+        self.assertEquals(m.matrix, [])
+        #Fail
+        m = Matrix([[]])
+        self.assertRaises(InvalidInput, Matrix, [[]])
+        m = Matrix([[], []])
+        self.assertRaises(InvalidInput, Matrix, [[]])
+        m = Matrix([[[], []], [[], []]])
+        self.assertRaises(InvalidInput, Matrix, [[]])
         
-        
-    def testAssignment(self):
-        """Assign arbitrary numbers for elements"""
-        m = Matrix(row=2, col=2)
-        m[0][0] = 1
-        m[1][1] = 1
-        self.assertEquals(m[0][0], 1)
-        self.assertEquals(m[1][1], 1)
-        self.assertEquals(m[0][1], 0)
-        self.assertEquals(m[1][0], 0)
-        self.assertEquals(m, Matrix([[1,0], [0,1]]))
-        m = Matrix(row=2, col=2)
-        m[0] = [1, 0]
-        m[1] = [0, 1]
-        self.assertEquals(m[0], Matrix([1, 0]))
-        self.assertEquals(m[1], Matrix([0, 1]))
-        self.assertEquals(m, Matrix([[1,0], [0,1]]))
-        m = Matrix(row=2, col=2)
-        m[0] = [1, 0, 0]
-        m[1] = [0, 1, 0]
-        self.assertRaises(MismatchingDimensions, m.__setitem__, [1, 0, 0])
-        self.assertRaises(MismatchingDimensions, m.__setitem__, [1, 0, 0])
-        
-
-    def test1DMatrixInit(self):
-        """Matrix should be initialized to a 1D matrix"""
-        m = Matrix([1, 2])
-        self.assertEquals(m.dim, 1)
+    def testMatrix(self):
+        """Matrix initialized with parameters"""
+        # Pass tests
+        m = Matrix([1, 2, 3])
+        self.assertEquals(m.order, 1)
         self.assertEquals(m.rows, 1)
-        self.assertEquals(m.cols, 2)
-        self.assertEquals(m[0], 1)
-        self.assertEquals(m[1], 2)
-        m = Matrix([[1],[2]])
-        self.assertEquals(m.dim, 1)
-        self.assertEquals(m.rows, 2)
+        self.assertEquals(m.cols, 3)
+        self.assertEquals(m.matrix, [1, 2, 3])
+        m = Matrix([[1, 2, 3]])
+        self.assertEquals(m.order, 1)
+        self.assertEquals(m.rows, 1)
+        self.assertEquals(m.cols, 3)
+        self.assertEquals(m.matrix, [1, 2, 3])
+        m = Matrix([[1], [2], [3]])
+        self.assertEquals(m.order, 1)
+        self.assertEquals(m.rows, 3)
         self.assertEquals(m.cols, 1)
-        self.assertEquals(m[0], 1)
-        self.assertEquals(m[1], 2)
-
-    def test2DMatrixInit(self):
-        """Matrix should be initialized to 2D matrix"""
+        self.assertEquals(m.matrix, [1, 2, 3])
         m = Matrix([[1, 2], [3, 4], [5, 6]])
-        self.assertEquals(m.dim, 2)
+        self.assertEquals(m.order, 2)
         self.assertEquals(m.rows, 3)
         self.assertEquals(m.cols, 2)
-        self.assertEquals(m[0], Matrix([1, 2]))
-        self.assertEquals(m[1], Matrix([3, 4]))
-        self.assertEquals(m[2], Matrix([5, 6]))
-        self.assertEquals(m[0][0], 1)
-        self.assertEquals(m[1][1], 4)
-        self.assertEquals(m[2][0], 5)
-    def testAddMatrix(self):
-        """Matrices of the same dimensions should be added"""
-        m1 = Matrix([1, 2, 3])
-        m2 = Matrix([1, 2, 3])
-        self.assertEquals(m1 + m2, Matrix([2, 4, 6]))
-        m1 = Matrix([[1, 2], [3, 4]])
-        m2 = Matrix([[1, 2], [3, 4]])
-        m3 = m1 + m2
-        self.assertEquals(m1 + m2, Matrix([[2, 4], [6, 8]]))
-    def testMulMatrix(self):
-        """Matrices of compatible dimensions should be multiplied"""
-        m1 = Matrix([[1, 2, 3], [4, 5, 6]])
-        m2 = Matrix([[1, 2], [3, 4], [5, 6]])
-        m3 = m1*m2
-        self.assertEquals(m1 * m2, Matrix([[22, 28], [49, 64]]))
-        
-    def testTranspose(self):
-        m = Matrix([[1, 4], [2, 5], [3, 6]])
-        m.transpose()
-        self.assertEquals(m, Matrix([[1,2,3],[4,5,6]]))
-        m.transpose()
-        self.assertEquals(m, Matrix([[1,4],[2,5],[3,6]]))
-    def testMalformedMatrixInit(self):
-        """Malformed matrices should raise exceptions"""
-        self.assertRaises(MalformedMatrix, Matrix, [[1], 2])
-        self.assertRaises(MalformedMatrix, Matrix, [[]])
-        self.assertRaises(MalformedMatrix, Matrix, [[[1]]])
-        self.assertRaises(MalformedMatrix, Matrix, [[1], [2, 3], [4, 5]])
+        self.assertEquals(m.matrix, [1, 2, 3, 4, 5, 6])
+        m = Matrix(rows=0, cols=0)
+        self.assertEquals(m.order, 0)
+        self.assertEquals(m.rows, 0)
+        self.assertEquals(m.cols, 0)
+        self.assertEquals(m.matrix, [])
+        m = Matrix(rows=2, cols=3)
+        self.assertEquals(m.order, 2)
+        self.assertEquals(m.rows, 2)
+        self.assertEquals(m.cols, 3)
+        self.assertEquals(m.matrix, [0, 0, 0, 0, 0, 0])
+        # Fail tests
+        self.assertRaises(InvalidInput, Matrix, 'a')
+        self.assertRaises(InvalidInput, Matrix, [1, [2]])
+        self.assertRaises(NotRectangular, Matrix, [[1], [2, 3]])
+        self.assertRaises(NotRectangular, Matrix, [[1, 1], [2, 2], [3]])
+        args = ()
+        kwargs = {'rows':1, 'cols':0}
+        self.assertRaises(InvalidInput, Matrix, *args, **kwargs)
+        args = ([])
+        kwargs = {'rows':1, 'cols':1}
+        self.assertRaises(InvalidInput, Matrix, *args, **kwargs)
+        args = ([])
+        kwargs = {'rows':1}
+        self.assertRaises(InvalidInput, Matrix, *args, **kwargs)
+        args = ([])
+        kwargs = {'cols':1}
+        self.assertRaises(InvalidInput, Matrix, *args, **kwargs)
+        args = ()
+        kwargs = {'rows':1}
+        self.assertRaises(InvalidInput, Matrix, *args, **kwargs)
+        args = ()
+        kwargs = {'cols':1}
+        self.assertRaises(InvalidInput, Matrix, *args, **kwargs)
+        args = ()
+        kwargs = {'cols':-1, 'rows':1}
+        self.assertRaises(InvalidInput, Matrix, *args, **kwargs)
 
-    def testMismatchingDimensionsAdd(self):
-        """Operations with matrices that don't match should raise exceptions"""
-        m1 = Matrix([1])
-        self.assertRaises(MismatchingDimensions, m1.__add__, Matrix([1, 2]))
-        m1 = Matrix([1, 2])
-        m2 = Matrix([1, 2])
-        self.assertRaises(MismatchingDimensions, m1.__mul__, m2)
+#    def testAssignment(self):
+#        """Assign arbitrary numbers for elements"""
+#        m = Matrix(row=2, col=2)
+#        m[0][0] = 1
+#        m[1][1] = 1
+#        self.assertEquals(m[0][0], 1)
+#        self.assertEquals(m[1][1], 1)
+#        self.assertEquals(m[0][1], 0)
+#        self.assertEquals(m[1][0], 0)
+#        self.assertEquals(m, Matrix([[1,0], [0,1]]))
+#        m = Matrix(row=2, col=2)
+#        m[0] = [1, 0]
+#        m[1] = [0, 1]
+#        self.assertEquals(m[0], Matrix([1, 0]))
+#        self.assertEquals(m[1], Matrix([0, 1]))
+#        self.assertEquals(m, Matrix([[1,0], [0,1]]))
+#        m = Matrix(row=2, col=2)
+#        m[0] = [1, 0, 0]
+#        m[1] = [0, 1, 0]
+#        self.assertRaises(MismatchingDimensions, m.__setitem__, [1, 0, 0])
+#        self.assertRaises(MismatchingDimensions, m.__setitem__, [1, 0, 0])
+#        
+#
+#    def test1DMatrixInit(self):
+#        """Matrix should be initialized to a 1D matrix"""
+#        m = Matrix([1, 2])
+#        self.assertEquals(m.dim, 1)
+#        self.assertEquals(m.rows, 1)
+#        self.assertEquals(m.cols, 2)
+#        self.assertEquals(m[0], 1)
+#        self.assertEquals(m[1], 2)
+#        m = Matrix([[1],[2]])
+#        self.assertEquals(m.dim, 1)
+#        self.assertEquals(m.rows, 2)
+#        self.assertEquals(m.cols, 1)
+#        self.assertEquals(m[0], 1)
+#        self.assertEquals(m[1], 2)
+#
+#    def test2DMatrixInit(self):
+#        """Matrix should be initialized to 2D matrix"""
+#        m = Matrix([[1, 2], [3, 4], [5, 6]])
+#        self.assertEquals(m.dim, 2)
+#        self.assertEquals(m.rows, 3)
+#        self.assertEquals(m.cols, 2)
+#        self.assertEquals(m[0], Matrix([1, 2]))
+#        self.assertEquals(m[1], Matrix([3, 4]))
+#        self.assertEquals(m[2], Matrix([5, 6]))
+#        self.assertEquals(m[0][0], 1)
+#        self.assertEquals(m[1][1], 4)
+#        self.assertEquals(m[2][0], 5)
+#    def testAddMatrix(self):
+#        """Matrices of the same dimensions should be added"""
+#        m1 = Matrix([1, 2, 3])
+#        m2 = Matrix([1, 2, 3])
+#        self.assertEquals(m1 + m2, Matrix([2, 4, 6]))
+#        m1 = Matrix([[1, 2], [3, 4]])
+#        m2 = Matrix([[1, 2], [3, 4]])
+#        m3 = m1 + m2
+#        self.assertEquals(m1 + m2, Matrix([[2, 4], [6, 8]]))
+#    def testMulMatrix(self):
+#        """Matrices of compatible dimensions should be multiplied"""
+#        m1 = Matrix([[1, 2, 3], [4, 5, 6]])
+#        m2 = Matrix([[1, 2], [3, 4], [5, 6]])
+#        m3 = m1*m2
+#        self.assertEquals(m1 * m2, Matrix([[22, 28], [49, 64]]))
+#        
+#    def testTranspose(self):
+#        m = Matrix([[1, 4], [2, 5], [3, 6]])
+#        m.transpose()
+#        self.assertEquals(m, Matrix([[1,2,3],[4,5,6]]))
+#        m.transpose()
+#        self.assertEquals(m, Matrix([[1,4],[2,5],[3,6]]))
+#    def testMalformedMatrixInit(self):
+#        """Malformed matrices should raise exceptions"""
+#        self.assertRaises(MalformedMatrix, Matrix, [[1], 2])
+#        self.assertRaises(MalformedMatrix, Matrix, [[]])
+#        self.assertRaises(MalformedMatrix, Matrix, [[[1]]])
+#        self.assertRaises(MalformedMatrix, Matrix, [[1], [2, 3], [4, 5]])
+#
+#    def testMismatchingDimensionsAdd(self):
+#        """Operations with matrices that don't match should raise exceptions"""
+#        m1 = Matrix([1])
+#        self.assertRaises(MismatchingDimensions, m1.__add__, Matrix([1, 2]))
+#        m1 = Matrix([1, 2])
+#        m2 = Matrix([1, 2])
+#        self.assertRaises(MismatchingDimensions, m1.__mul__, m2)
 
 if __name__ == "__main__":
     unittest.main()
