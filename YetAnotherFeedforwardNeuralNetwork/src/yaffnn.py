@@ -1,12 +1,13 @@
 import unittest
 import random
+import math
 
 class MalformedMatrix(Exception):
     def __init__(self, msg):
         self.msg = msg
     def __str__(self):
         return str(self.msg)
-class MismatchingDimensions(Exception):
+class DimensionError(Exception):
     def __init__(self, msg):
         self.msg = msg
     def __str__(self):
@@ -22,75 +23,41 @@ class NotRectangular(Exception):
     def __str__(self):
         return str(self.msg)
 
-class Matrix:
-    """The idea behind this class is that you give the constructor a list, or
-    list of lists representing a 1D or 2D matrix, and it gives you an object
-    representing a 1D or 2D matrix with all the operations associated with
-    these sorts of matrices. It does NOT take block matrices though.
-    
-    All in all this class is like a very bad version of NumPy.
-    """
-    def _isNum(self, s):
-        """Tests if s is a number"""
-        try:
-            float(s)
-            return True
-        except ValueError:
-            return False
-
-    def _is1d(self, matrix):
-        """Tests if the list given represents a '1d matrix'"""
-        if all(map(self._isNum, matrix)):
-            return True
-        else:
-            for row in matrix:
-                # has to be a list
-                if not isinstance(row, list):
-                    return False
-                # a list with 1 element
-                if not len(row) == 1:
-                    return False
-                # where the element is a number
-                if not self._isNum(row[0]):
-                    return False
-            return True
-        
-    def _is2d(self, matrix):
-        """Tests if the list given represents a '2d matrix'"""
-        # can fail if given an empty matrix
-        # shouldn't happen cause empty matrix is tested beforehand
-        # will fix later...
-        
-        # record the length of the row
-        numCols = len(matrix[0])
-        for row in matrix:
-            # if row is not a list
-            if not isinstance(row, list):
-                return False
-            # if row is empty
-            if row == []:
-                return False
-            
-            for element in row:
-                # if element in row is not a number
-                if not self._isNum(element):
-                    return False
-            # if the length of every row is the same as every other row
-            if len(row) != numCols:
-                return False
+def isNum(s):
+    """Tests if s is a number"""
+    try:
+        float(s)
         return True
+    except (ValueError, TypeError):
+        return False
+
+class Matrix:
+    """
+    The idea behind this class is that you give the constructor a list, or
+    list of lists representing a vector or matrix, and it gives you an object
+    representing a vector or matrix with all the operations associated with
+    these sorts of objects. It does NOT take block matrices though.
+    
+    All in all this class is like a very bad version of NumPy without the extra
+    cool numerical numpy stuff although I might add those later.
+    
+    Some ambiguity, sometimes I don't consider 1x1 matrices to be matrices but
+    allow them because they might be intermediate steps in some chain of
+    multiplications. The times I don't consider them is when using __setitem__
+    if __setitem__ returns a 1x1 matrix it returns a scalar number instead
+    """
     
     def __init__(self, matrix=None, rows=None, cols=None):
         """The one that rules them all"""
         # our internal representation of the matrix
-        self.matrix = []
+        self.matrix = None
         # number of rows
-        self.rows = 0
+        self.rows = None
         # number of columns
-        self.cols = 0
+        self.cols = None
         # tensor order (0 order is scalar, but for this application it is
         # empty matrix
-        self.order = 0
+        self.order = None
 
         if matrix == None and rows != None and cols != None:
             if (rows == 0 and cols != 0) or (rows != 0 and cols == 0):
@@ -101,51 +68,273 @@ class Matrix:
                 self.order = 1
             elif rows > 1 and cols > 1:
                 self.order = 2
-            # else rows=0, cols=0 and order = 0 (default values)
+            else:
+                self.order = 0
             self.rows = rows
             self.cols = cols
+            self.matrix = []
+            for i in range(rows * cols):
+                self.matrix.append(0)
         elif matrix != None and rows == None and cols == None:
-            None
+            # these if statements are order dependent
+            if not isinstance(matrix, list):
+                raise InvalidInput("Matrix is not a list")
+            elif matrix == []:
+                self.rows = 0
+                self.cols = 0
+                self.order = 0
+                self.matrix = matrix
+            elif all([isinstance(row, list) for row in matrix]):
+                rowLengths = [len(row) for row in matrix]
+                if rowLengths[0] == 0:
+                    raise InvalidInput("Row has zero length")
+                if rowLengths.count(rowLengths[0]) != len(rowLengths):
+                    raise NotRectangular("Row lengths don't match")
+                if not all([isNum(element) for row in matrix for element in row]):
+                    raise InvalidInput("Row elements are not numbers")
+                self.rows = len(rowLengths)
+                self.cols = rowLengths[0]
+                if self.rows == 1 or self.cols == 1:
+                    self.order = 1
+                else:
+                    self.order = 2
+                self.matrix = [element for row in matrix for element in row]
+            elif all([isNum(element) for element in matrix]):
+                self.rows = 1
+                self.cols = len(matrix)
+                self.order = 1
+                self.matrix = matrix
+            else:
+                raise InvalidInput("Some rows in matrix are not lists")
+        elif matrix == None and rows == None and cols == None:
+            self.rows = 0
+            self.cols = 0
+            self.order = 0
+            self.matrix = []
         else:
             raise InvalidInput("Either matrix is given or rows and cols are given, not both.")
-#        if matrix == None:
-#            if rows != None and cols != None:
-#                self.rows = rows
-#                self.cols = cols
-#                for i in range(rows*cols):
-#                    self.matrix.append(0)
-#            else:
-#                self.order = 0
-#                self.rows = 0
-#                self.cols = 0
-#        elif(self._is1d(matrix)):        
-#            self.order = 1
-#            if isinstance(matrix[0], list):
-#                self.rows = len(matrix)
-#                self.cols = 1
-#                for row in matrix:
-#                    self.matrix += row
-#            else:
-#                self.rows = 1
-#                self.cols = len(matrix)
-#                self.matrix = matrix[:] 
-#        elif(self._is2d(matrix)):
-#            self.order = 2
-#            self.rows = len(matrix)
-#            self.cols = len(matrix[0])
-#            for row in matrix:
-#                self.matrix += row
-#        else:
-#            raise MalformedMatrix("Matrix has invalid dimensions or is a block matrix.")
 
     def __getitem__(self, key):
-        """Overloads the [] operator"""
-        if self.order == 1:
-            return self.matrix[key]
-        elif self.order == 2:
-            indexStart = self.cols * key
-            return Matrix(self.matrix[indexStart:indexStart+self.cols])
+        """
+        Handles [1,1], [slice, 1], [1, slice], [slice, slice], [1], [slice]
+        Don't try slices with negative indices or negative indices in general
+        """
+        colSlice = slice(None, None, None)
+        if isNum(key):
+            rowIndices = [key]
+        elif isinstance(key, slice):
+            indexSlice = key
+            if indexSlice.start == None:
+                start = 0
+            elif isNum(indexSlice.start):
+                start = indexSlice.start
+            else:
+                raise TypeError('Slice start is not a number')
+            if indexSlice.stop == None:
+                stop = self.rows
+            elif isNum(indexSlice.stop):
+                stop = indexSlice.stop + 1
+            else:
+                raise TypeError('Slice stop is not a number')
+            if indexSlice.step == None:
+                step = 1
+            elif isNum(indexSlice.step):
+                step = indexSlice.step
+            else:
+                raise TypeError('Slice step is not a number')
+            rowIndices = range(start, stop, step)
+        elif isinstance(key, tuple) and len(key) == 2:
+            # handle the first argument in the tuple
+            if isNum(key[0]):
+                rowIndices = [key[0]]
+            elif isinstance(key[0], slice):
+                indexSlice = key[0]
+                if indexSlice.start == None:
+                    start = 0
+                elif isNum(indexSlice.start):
+                    start = indexSlice.start
+                else:
+                    raise TypeError('Slice start is not a number')
+                if indexSlice.stop == None:
+                    stop = self.rows
+                elif isNum(indexSlice.stop):
+                    stop = indexSlice.stop + 1
+                else:
+                    raise TypeError('Slice stop is not a number')
+                if indexSlice.step == None:
+                    step = 1
+                elif isNum(indexSlice.step):
+                    step = indexSlice.step
+                else:
+                    raise TypeError('Slice step is not a number')
+                rowIndices = range(start, stop, step)
+            else:
+                raise TypeError('Row index is not an integer or slice')
+            # handle the second argument in the tuple
+            if isNum(key[1]):
+                colSlice = slice(key[1], key[1] + 1)
+            elif isinstance(key[1], slice):
+                indexSlice = key[1]
+                if indexSlice.start == None:
+                    start = 0
+                elif isNum(indexSlice.start):
+                    start = indexSlice.start
+                else:
+                    raise TypeError('Slice start is not a number')
+                if indexSlice.stop == None:
+                    # watch out when copy paste row for rows col for cols
+                    stop = self.cols
+                elif isNum(indexSlice.stop):
+                    stop = indexSlice.stop + 1
+                else:
+                    raise TypeError('Slice stop is not a number')
+                if indexSlice.step == None:
+                    step = 1
+                elif isNum(indexSlice.step):
+                    step = indexSlice.step
+                else:
+                    raise TypeError('Slice step is not a number')
+                colSlice = slice(start, stop, step)
+            else:
+                raise TypeError('Column index is not an integer or slice')
+        elif isinstance(key, tuple):
+            raise TypeError('More than 2 arguments')
+        else:
+            raise TypeError('Index is not a number')
+        # calculate the slices representing the rows of the matrix
+        rowSlices = [slice(self.cols * rowIndex, self.cols * rowIndex + self.cols) for rowIndex in rowIndices]
+        # select only the chosen columns from these row slices
+        resultMatrix = [self.matrix[rowSlice][colSlice] for rowSlice in rowSlices]
+        # if the result is a 1x1 matrix then return a scalar
+        if len(resultMatrix[0]) == 1 and len(resultMatrix) == 1:
+            return resultMatrix[0][0]
+        # else return a Matrix
+        else:
+            return Matrix(resultMatrix)
+
+    def __setitem__(self, key, value):
+        """
+        Handles [1,1], [slice, 1], [1, slice], [slice, slice], [1], [slice]
+        Don't try slices with negative indices or negative indices in general
+        """
+        colSlice = slice(0, self.cols, 1)
+        if isNum(key):
+            rowIndices = [key]
+        elif isinstance(key, slice):
+            indexSlice = key
+            if indexSlice.start == None:
+                start = 0
+            elif isNum(indexSlice.start):
+                start = indexSlice.start
+            else:
+                raise TypeError('Slice start is not a number')
+            if indexSlice.stop == None:
+                # watch out when copy paste row for rows col for cols
+                stop = self.rows
+            elif isNum(indexSlice.stop):
+                stop = indexSlice.stop + 1
+            else:
+                raise TypeError('Slice stop is not a number')
+            if indexSlice.step == None:
+                step = 1
+            elif isNum(indexSlice.step):
+                step = indexSlice.step
+            else:
+                raise TypeError('Slice step is not a number')
+            rowIndices = range(start, stop, step)
+        elif isinstance(key, tuple) and len(key) == 2:
+            # handle the first argument in the tuple
+            if isNum(key[0]):
+                rowIndices = [key[0]]
+            elif isinstance(key[0], slice):
+                indexSlice = key[0]
+                if indexSlice.start == None:
+                    start = 0
+                elif isNum(indexSlice.start):
+                    start = indexSlice.start
+                else:
+                    raise TypeError('Slice start is not a number')
+                if indexSlice.stop == None:
+                    # watch out when copy paste row for rows col for cols
+                    stop = self.rows
+                elif isNum(indexSlice.stop):
+                    stop = indexSlice.stop + 1
+                else:
+                    raise TypeError('Slice stop is not a number')
+                if indexSlice.step == None:
+                    step = 1
+                elif isNum(indexSlice.step):
+                    step = indexSlice.step
+                else:
+                    raise TypeError('Slice step is not a number')
+                rowIndices = range(start, stop, step)
+            else:
+                raise TypeError('Row index is not an integer or slice')
+            # handle the second argument in the tuple
+            if isNum(key[1]):
+                colSlice = slice(key[1], key[1] + 1, 1)
+            elif isinstance(key[1], slice):
+                indexSlice = key[1]
+                if indexSlice.start == None:
+                    start = 0
+                elif isNum(indexSlice.start):
+                    start = indexSlice.start
+                else:
+                    raise TypeError('Slice start is not a number')
+                if indexSlice.stop == None:
+                    # watch out when copy paste row for rows col for cols
+                    stop = self.cols 
+                elif isNum(indexSlice.stop):
+                    stop = indexSlice.stop + 1
+                else:
+                    raise TypeError('Slice stop is not a number')
+                if indexSlice.step == None:
+                    step = 1
+                elif isNum(indexSlice.step):
+                    step = indexSlice.step
+                else:
+                    raise TypeError('Slice step is not a number')
+                colSlice = slice(start, stop, step)
+            else:
+                raise TypeError('Column index is not an integer or slice')
+        elif isinstance(key, tuple):
+            raise TypeError('More than 2 arguments')
+        else:
+            raise TypeError('Index is not a number')
         
+        # out of bounds errors for column slices
+        if colSlice.stop > self.cols:
+            raise IndexError('Column slice out of bounds')
+        if colSlice.start < 0:
+            raise IndexError('Column slice out of bounds')
+        
+        # calculate the slices representing the rows of the matrix with columns sliced
+        rowSlices = [slice(self.cols * rowIndex + colSlice.start, self.cols * rowIndex + colSlice.stop, colSlice.step) for rowIndex in rowIndices]
+        valueList = []
+        numRowsToAssign = len(rowSlices)
+        numColumnsToAssign = (1+math.floor(((colSlice.stop - colSlice.start)-1)/colSlice.step))
+        numElementsToAssign = numRowsToAssign*numColumnsToAssign
+         
+        if isNum(value):
+            # might be buggy for decending slices
+            # only append the number of columns that need assigning
+            # so if [:, 0], then only append once
+            # if [:, 0:1], then append twice    
+            for i in range(numElementsToAssign):
+                valueList.append(value)
+        elif isinstance(value, list):
+            
+            if len(value) == numElementsToAssign:
+                valueList = value
+            else:
+                raise ValueError('Value list not same length as matrix entries to be assigned')
+        
+        valueList = [valueList[i*numColumnsToAssign:i*numColumnsToAssign + numColumnsToAssign] for i in range(numRowsToAssign)]
+        # select only the chosen columns from these row slices and assign values
+        for i,rowSlice in enumerate(rowSlices):
+            self.matrix[rowSlice] = valueList[i]
+        
+
     def __eq__(self, other):
         """Allows == comparisons"""
         return self.matrix == other.matrix and self.rows == other.rows and self.cols == other.cols and self.order == other.order
@@ -153,9 +342,8 @@ class Matrix:
     def __add__(self, other):
         """Overloads the + operator"""
         if self.rows == other.rows and self.cols == other.cols:
-            matrix = []
-            for i in range(len(self.matrix)):
-                matrix.append(self.matrix[i] + other.matrix[i])
+            matrix = [self.matrix[i] + other.matrix[i] for i in range(len(self.matrix))]
+            
             # hack that uses knowledge of internal representation
             result = Matrix(matrix)
             result.order = self.order
@@ -163,44 +351,69 @@ class Matrix:
             result.cols = self.cols
             return result
         else:
-            raise MismatchingDimensions("Dimensions of the matrices don't match.")
+            raise DimensionError("Dimensions of the matrices don't match.")
     
     def __sub__(self, other):
         """Overloads the - operator"""
         if self.rows == other.rows and self.cols == other.cols:
-            matrix = []
-            for i in range(len(self.matrix)):
-                matrix.append(self.matrix[i] - other.matrix[i])
+            matrix = [self.matrix[i] - other.matrix[i] for i in range(len(self.matrix))]
+            
+            # hack that uses knowledge of internal representation
             result = Matrix(matrix)
             result.order = self.order
             result.rows = self.rows
             result.cols = self.cols
             return result
         else:
-            raise MismatchingDimensions("Dimensions of the matrices don't match")
+            raise DimensionError("Dimensions of the matrices don't match")
         
     def __mul__(self, other):
-        """Overloads the * operator. Does matrix multiplication... I'll decide
-        whether scalar multiplication can work in here"""
-        if not self.cols == other.rows:
-            raise MismatchingDimensions("Rows of A not equal to Cols of B")
-    
+        """
+        Overloads the * operator. Does matrix multiplication.
+        __rmul__ for scalar multiplication when the scalar is on the left
+        """
+        
         matrix = []
-        length = self.rows
-        for rownum in range(length):
-            row = self.matrix[rownum*self.cols:rownum*self.cols+self.cols]
-            for colnum in range(length):
-                col = other.matrix[colnum::other.cols]
-                sum = 0
-                for i in range(self.cols):
-                    sum += row[i]*col[i] 
-                matrix.append(sum)
-        result = Matrix(matrix)
-        result.order = 2
-        result.rows = self.rows
-        result.cols = other.cols
+        if isNum(other):
+            matrix = [self.matrix[i]*other for i in range(len(self.matrix))]
+        elif isinstance(other, Matrix):
+            if self.cols != other.rows:
+                raise DimensionError("Number of rows of A != to number of columns of B")
+            else:
+                numRows = self.rows
+                numCols = self.cols
+                for rowNum in range(numRows):
+                    row = self.matrix[rowNum * numCols:rowNum * numCols + numCols]
+                    for colNum in range(numRows):
+                        col = other.matrix[colNum::other.cols]
+                        sum = 0
+                        for i in range(numCols):
+                            sum += row[i]*col[i] 
+                        matrix.append(sum)
+                result = Matrix(matrix)
+                result.order = 2
+                result.rows = self.rows
+                result.cols = other.cols
+                
+                
+                leftRows = [self.matrix[i*self.cols: i*self.cols + self.cols] for i in range(self.rows)]
+                rightCols = [self.matrix[i::other.cols] for i in range(other.cols)]
+                result = [zip(leftRows[i], rightCols[i]) for i in range(self.rows)]
+                result = [i[0]*i[1] for item in result for i in item]
+                
         return result
+    
+    def dot(self, other):
+        if not isinstance(other, Matrix):
+            raise TypeError('Right operand is not a Matrix')
+        if self.rows != 1 and self.cols != 1:
+            raise DimensionError('Left operand is not a vector')
+        if other.rows != 1 and other.cols != 1:
+            raise DimensionError('Right operand is not a vector')
+        
+        return sum([self.matrix[i] * other.matrix[i] for i in range(len(self.matrix))])
 
+    
     def transpose(self):
         """Transposes current matrix"""
         matrix = []
@@ -287,10 +500,10 @@ class NeuralNetwork:
             self.deltaVectorList[-1 - i].transpose()
             self.deltaVectorList.prepend(deltaVector)
 
-class MatrixTest(unittest.TestCase):
-    def testEmptyMatrix(self):
-        """Matrix initialized with no parameters, or empty list"""
-        #Pass 
+class MatrixTest(unittest.TestCase): 
+    def testMatrix(self):
+        """Matrix initialized with parameters"""
+        # Pass tests
         m = Matrix()
         self.assertEquals(m.order, 0)
         self.assertEquals(m.rows, 0)
@@ -301,17 +514,6 @@ class MatrixTest(unittest.TestCase):
         self.assertEquals(m.rows, 0)
         self.assertEquals(m.cols, 0)
         self.assertEquals(m.matrix, [])
-        #Fail
-        m = Matrix([[]])
-        self.assertRaises(InvalidInput, Matrix, [[]])
-        m = Matrix([[], []])
-        self.assertRaises(InvalidInput, Matrix, [[]])
-        m = Matrix([[[], []], [[], []]])
-        self.assertRaises(InvalidInput, Matrix, [[]])
-        
-    def testMatrix(self):
-        """Matrix initialized with parameters"""
-        # Pass tests
         m = Matrix([1, 2, 3])
         self.assertEquals(m.order, 1)
         self.assertEquals(m.rows, 1)
@@ -343,91 +545,149 @@ class MatrixTest(unittest.TestCase):
         self.assertEquals(m.cols, 3)
         self.assertEquals(m.matrix, [0, 0, 0, 0, 0, 0])
         # Fail tests
+        self.assertRaises(InvalidInput, Matrix, [[]])
+        self.assertRaises(InvalidInput, Matrix, [[], []])
+        self.assertRaises(InvalidInput, Matrix, [[[], []], [[], []]])
         self.assertRaises(InvalidInput, Matrix, 'a')
         self.assertRaises(InvalidInput, Matrix, [1, [2]])
         self.assertRaises(NotRectangular, Matrix, [[1], [2, 3]])
         self.assertRaises(NotRectangular, Matrix, [[1, 1], [2, 2], [3]])
-        args = ()
+        args = []
         kwargs = {'rows':1, 'cols':0}
         self.assertRaises(InvalidInput, Matrix, *args, **kwargs)
-        args = ([])
+        args = [[]]
         kwargs = {'rows':1, 'cols':1}
         self.assertRaises(InvalidInput, Matrix, *args, **kwargs)
-        args = ([])
+        args = [[]]
         kwargs = {'rows':1}
         self.assertRaises(InvalidInput, Matrix, *args, **kwargs)
-        args = ([])
+        args = [[]]
         kwargs = {'cols':1}
         self.assertRaises(InvalidInput, Matrix, *args, **kwargs)
-        args = ()
+        args = []
         kwargs = {'rows':1}
         self.assertRaises(InvalidInput, Matrix, *args, **kwargs)
-        args = ()
+        args = []
         kwargs = {'cols':1}
         self.assertRaises(InvalidInput, Matrix, *args, **kwargs)
-        args = ()
+        args = []
         kwargs = {'cols':-1, 'rows':1}
         self.assertRaises(InvalidInput, Matrix, *args, **kwargs)
 
-#    def testAssignment(self):
-#        """Assign arbitrary numbers for elements"""
-#        m = Matrix(row=2, col=2)
-#        m[0][0] = 1
-#        m[1][1] = 1
-#        self.assertEquals(m[0][0], 1)
-#        self.assertEquals(m[1][1], 1)
-#        self.assertEquals(m[0][1], 0)
-#        self.assertEquals(m[1][0], 0)
-#        self.assertEquals(m, Matrix([[1,0], [0,1]]))
-#        m = Matrix(row=2, col=2)
-#        m[0] = [1, 0]
-#        m[1] = [0, 1]
-#        self.assertEquals(m[0], Matrix([1, 0]))
-#        self.assertEquals(m[1], Matrix([0, 1]))
-#        self.assertEquals(m, Matrix([[1,0], [0,1]]))
-#        m = Matrix(row=2, col=2)
-#        m[0] = [1, 0, 0]
-#        m[1] = [0, 1, 0]
-#        self.assertRaises(MismatchingDimensions, m.__setitem__, [1, 0, 0])
-#        self.assertRaises(MismatchingDimensions, m.__setitem__, [1, 0, 0])
-#        
-#
-#    def test1DMatrixInit(self):
-#        """Matrix should be initialized to a 1D matrix"""
-#        m = Matrix([1, 2])
-#        self.assertEquals(m.dim, 1)
-#        self.assertEquals(m.rows, 1)
-#        self.assertEquals(m.cols, 2)
-#        self.assertEquals(m[0], 1)
-#        self.assertEquals(m[1], 2)
-#        m = Matrix([[1],[2]])
-#        self.assertEquals(m.dim, 1)
-#        self.assertEquals(m.rows, 2)
-#        self.assertEquals(m.cols, 1)
-#        self.assertEquals(m[0], 1)
-#        self.assertEquals(m[1], 2)
-#
-#    def test2DMatrixInit(self):
-#        """Matrix should be initialized to 2D matrix"""
-#        m = Matrix([[1, 2], [3, 4], [5, 6]])
-#        self.assertEquals(m.dim, 2)
-#        self.assertEquals(m.rows, 3)
-#        self.assertEquals(m.cols, 2)
-#        self.assertEquals(m[0], Matrix([1, 2]))
-#        self.assertEquals(m[1], Matrix([3, 4]))
-#        self.assertEquals(m[2], Matrix([5, 6]))
-#        self.assertEquals(m[0][0], 1)
-#        self.assertEquals(m[1][1], 4)
-#        self.assertEquals(m[2][0], 5)
-#    def testAddMatrix(self):
-#        """Matrices of the same dimensions should be added"""
-#        m1 = Matrix([1, 2, 3])
-#        m2 = Matrix([1, 2, 3])
-#        self.assertEquals(m1 + m2, Matrix([2, 4, 6]))
-#        m1 = Matrix([[1, 2], [3, 4]])
-#        m2 = Matrix([[1, 2], [3, 4]])
-#        m3 = m1 + m2
-#        self.assertEquals(m1 + m2, Matrix([[2, 4], [6, 8]]))
+    def test__eq__(self):
+        # Pass
+        self.assertEquals(Matrix(), Matrix())
+        self.assertEquals(Matrix(), Matrix([]))
+        self.assertEquals(Matrix(), Matrix(rows=0, cols=0))
+        self.assertEquals(Matrix([]), Matrix([]))
+        self.assertEquals(Matrix([]), Matrix())
+        self.assertEquals(Matrix([]), Matrix(rows=0, cols=0))
+        self.assertEquals(Matrix(rows=0, cols=0), Matrix(rows=0, cols=0))
+        self.assertEquals(Matrix(rows=0, cols=0), Matrix())
+        self.assertEquals(Matrix(rows=0, cols=0), Matrix([]))
+        m = Matrix(rows=3, cols=2)
+        m.matrix = [1,2,3,4,5,6]
+        self.assertEquals(m, Matrix([[1, 2], [3, 4], [5, 6]]))
+        # Fail
+        self.assertNotEquals(Matrix([1, 2]), Matrix([1,3]))
+
+    def test__getitem__(self):
+        """
+        Does not test negative indices and step sizes. I don't know if we're
+        ready for that kind of pain. Probably won't test/implement negative
+        or funky slices, indexing until I decide I need it.
+        Doesn't test exceptions though I have exceptions in place for many errors
+        """
+        # Pass
+        m = Matrix([[1,2,3],[4,5,6],[7,8,9]])
+        self.assertEquals(m[1], Matrix([4,5,6]))
+        self.assertEquals(m[1,1], 5)
+        self.assertEquals(m[1,1:2], Matrix([5,6]))
+        self.assertEquals(m[1:2, 1], Matrix([[5],[8]]))
+        self.assertEquals(m[1:2:2, 1], 5)
+        self.assertEquals(m[1:2, 1:2], Matrix([[5,6],[8,9]]))
+        self.assertEquals(m[1:2:2, 1:1:2], 5)
+        self.assertEquals(m[0:2:2, 0:2:2], Matrix([[1,3],[7,9]]))
+        self.assertEquals(m[:], m)
+        self.assertEquals(m[::2], Matrix([[1,2,3],[7,8,9]]))
+        self.assertEquals(m[::3], Matrix([1,2,3]))
+        self.assertEquals(m[1:2], Matrix([[4,5,6],[7,8,9]]))
+        
+        self.assertEquals(m[1,1], 5)
+        self.assertEquals(m[1,:], Matrix([4,5,6]))
+    
+        self.assertEquals(m[:,1], Matrix([[2],[5],[8]]))
+        self.assertEquals(m[0:1,1], Matrix([[2],[5]]))
+        self.assertEquals(m[::1,1], Matrix([[2],[5],[8]]))
+        self.assertEquals(m[:,1:2], Matrix([[2,3],[5,6],[8,9]]))
+        # Fail
+        self.assertNotEquals(m[1], Matrix([3,4,5]))
+        self.assertNotEquals(m[0:2:2, 0:2:2], Matrix([[1,3],[7,8]]))
+        
+    def test__setitem__(self):
+        """
+        Doesn't test negative indices or slices
+        Doesn't test exceptions though I have exceptions in place for many errors
+        """
+        # Pass
+        m = Matrix(rows=2, cols=3)
+        m[0,0] = 1
+        self.assertEquals(m, Matrix([[1,0,0],[0,0,0]]))
+        m[1] = [0,0,1]
+        self.assertEquals(m, Matrix([[1,0,0],[0,0,1]]))
+        m[1,:] = [0,1,0]
+        self.assertEquals(m, Matrix([[1,0,0],[0,1,0]]))
+        m[1] = 1
+        self.assertEquals(m, Matrix([[1,0,0],[1,1,1]]))
+        m[1,:] = 2
+        self.assertEquals(m, Matrix([[1,0,0],[2,2,2]]))
+        m[0] = 1
+        self.assertEquals(m, Matrix([[1,1,1],[2,2,2]]))
+        m[0,:] = 2
+        self.assertEquals(m, Matrix([[2,2,2],[2,2,2]]))
+        m[1,2] = 3
+        self.assertEquals(m, Matrix([[2,2,2],[2,2,3]]))
+        m[:,0] = 4
+        self.assertEquals(m, Matrix([[4,2,2],[4,2,3]]))
+        m[:,1] = [5,6]
+        self.assertEquals(m, Matrix([[4,5,2],[4,6,3]]))
+        m[:,1:2] = 7
+        self.assertEquals(m, Matrix([[4,7,7],[4,7,7]]))
+        m[:,1:2] = [1,2,3,4]
+        self.assertEquals(m, Matrix([[4,1,2],[4,3,4]]))
+        m[1,0::2] = [1,2]
+        self.assertEquals(m, Matrix([[4,1,2],[1,3,2]]))
+        m = Matrix(rows=3, cols=3)
+        m[0::2,0::2] = [1,2,3,4]
+        self.assertEquals(m, Matrix([[1,0,2],[0,0,0],[3,0,4]]))
+        m[0::2,0::2] = 5
+        self.assertEquals(m, Matrix([[5,0,5],[0,0,0],[5,0,5]]))
+        self.assertEquals(m[:,:], m)
+        self.assertEquals(m[:], m)
+#        # Fail
+#        args = [(0,0), 'a']
+#        self.assertRaises(TypeError, m.__setitem__, *args)
+#        args = [(0,0,0), 1]
+#        self.assertRaises(TypeError, m.__setitem__, *args)
+#        args = [(0,0), [1,2]]
+#        self.assertRaises(TypeError, m.__setitem__, *args)
+#        args = [(slice(0,3,None),0), [1,2,3,4]]
+#        self.assertRaises(TypeError, m.__setitem__, *args)
+#        args = [(slice(0,3,None),0), [1,2]]
+#        self.assertRaises(TypeError, m.__setitem__, *args)
+#        args = [('a',0), 1]
+#        self.assertRaises(TypeError, m.__setitem__, *args)
+#        args = [(0,'a'), 1]
+#        self.assertRaises(TypeError, m.__setitem__, *args)
+
+
+    def test__add__(self):
+        """Matrices of the same dimensions should be added"""
+        self.assertEquals(Matrix([1, 2, 3]) + Matrix([1, 2, 3]), Matrix([2, 4, 6]))
+        m1 = Matrix([[1, 2], [3, 4]])
+        m2 = Matrix([[1, 2], [3, 4]])
+        self.assertEquals(m1 + m2, Matrix([[2, 4], [6, 8]]))
+        
 #    def testMulMatrix(self):
 #        """Matrices of compatible dimensions should be multiplied"""
 #        m1 = Matrix([[1, 2, 3], [4, 5, 6]])
@@ -448,13 +708,13 @@ class MatrixTest(unittest.TestCase):
 #        self.assertRaises(MalformedMatrix, Matrix, [[[1]]])
 #        self.assertRaises(MalformedMatrix, Matrix, [[1], [2, 3], [4, 5]])
 #
-#    def testMismatchingDimensionsAdd(self):
+#    def testDimensionErrorAdd(self):
 #        """Operations with matrices that don't match should raise exceptions"""
 #        m1 = Matrix([1])
-#        self.assertRaises(MismatchingDimensions, m1.__add__, Matrix([1, 2]))
+#        self.assertRaises(DimensionError, m1.__add__, Matrix([1, 2]))
 #        m1 = Matrix([1, 2])
 #        m2 = Matrix([1, 2])
-#        self.assertRaises(MismatchingDimensions, m1.__mul__, m2)
+#        self.assertRaises(DimensionError, m1.__mul__, m2)
 
 if __name__ == "__main__":
     unittest.main()
