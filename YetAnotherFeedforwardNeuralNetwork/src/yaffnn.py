@@ -38,13 +38,21 @@ class Matrix:
     representing a vector or matrix with all the operations associated with
     these sorts of objects. It does NOT take block matrices though.
     
-    All in all this class is like a very bad version of NumPy without the extra
-    cool numerical numpy stuff although I might add those later.
+    All in all this class is like a very bad version of NumPy/matlab without the
+    extra cool numerical numpy/matlab stuff although I might add those later.
     
-    Some ambiguity, sometimes I don't consider 1x1 matrices to be matrices but
-    allow them because they might be intermediate steps in some chain of
-    multiplications. The times I don't consider them is when using __setitem__
-    if __setitem__ returns a 1x1 matrix it returns a scalar number instead
+    Note ambiguity: sometimes scalars are returned instead of Matrix when doing
+    some operations like dot product. Operations on 0x0 matrices are not allowed
+    
+    The method named "multiply" is an elementwise multiplication
+    
+    You can use slice notation on the matrices but don't try descending slices.
+    Probably are bugs with that cause I don't care about reversing matrices
+    right now
+    
+    SPEED: Probably very slow, maybe turn this into C later
+    
+    self.order is currently worthless
     """
     
     def __init__(self, matrix=None, rows=None, cols=None):
@@ -55,9 +63,6 @@ class Matrix:
         self.rows = None
         # number of columns
         self.cols = None
-        # tensor order (0 order is scalar, but for this application it is
-        # empty matrix
-        self.order = None
 
         if matrix == None and rows != None and cols != None:
             if (rows == 0 and cols != 0) or (rows != 0 and cols == 0):
@@ -337,73 +342,152 @@ class Matrix:
 
     def __eq__(self, other):
         """Allows == comparisons"""
-        return self.matrix == other.matrix and self.rows == other.rows and self.cols == other.cols and self.order == other.order
+        return self.matrix == other.matrix and self.rows == other.rows and self.cols == other.cols
     
     def __add__(self, other):
-        """Overloads the + operator"""
-        if self.rows == other.rows and self.cols == other.cols:
-            matrix = [self.matrix[i] + other.matrix[i] for i in range(len(self.matrix))]
-            
-            # hack that uses knowledge of internal representation
-            result = Matrix(matrix)
-            result.order = self.order
-            result.rows = self.rows
-            result.cols = self.cols
-            return result
+        """Returns a new Matrix representing a scalar or Matrix added to this Matrix"""
+        if not (isNum(other) or isinstance(other, Matrix)):
+            raise TypeError("Operand is not a Matrix or number")
+        # uses short circuit logic
+        if isinstance(other, Matrix) and (self.rows != other.rows or self.cols != other.cols):
+            raise DimensionError("Dimensions of the matrices don't match")
+
+        thisMatrix = self.matrix
+        if isNum(other):
+            resultMatrix = [element + other for element in thisMatrix]
         else:
-            raise DimensionError("Dimensions of the matrices don't match.")
+            otherMatrix = other.matrix
+            resultMatrix = [thisElement + otherMatrix[otherIndex] for otherIndex, thisElement in enumerate(thisMatrix)]
+        
+        # uses internal structure of Matrix
+        result = Matrix()
+        result.matrix = resultMatrix
+        result.rows = self.rows
+        result.cols = self.cols
+        return result
+    
+    def __radd__(self, other):
+        return self.__add__(other)
+        
     
     def __sub__(self, other):
-        """Overloads the - operator"""
-        if self.rows == other.rows and self.cols == other.cols:
-            matrix = [self.matrix[i] - other.matrix[i] for i in range(len(self.matrix))]
-            
-            # hack that uses knowledge of internal representation
-            result = Matrix(matrix)
-            result.order = self.order
-            result.rows = self.rows
-            result.cols = self.cols
-            return result
-        else:
+        """Returns a new Matrix representing a scalar or Matrix subtracted from this Matrix"""
+        if not (isNum(other) or isinstance(other, Matrix)):
+            raise TypeError("Operand is not a Matrix or number")
+        # uses short circuit logic
+        if isinstance(other, Matrix) and (self.rows != other.rows or self.cols != other.cols):
             raise DimensionError("Dimensions of the matrices don't match")
+
+        thisMatrix = self.matrix
+        if isNum(other):
+            resultMatrix = [element - other for element in thisMatrix]
+        else:
+            otherMatrix = other.matrix
+            resultMatrix = [thisElement - otherMatrix[otherIndex] for otherIndex, thisElement in enumerate(thisMatrix)]
+        
+        # uses internal structure of Matrix
+        result = Matrix()
+        result.matrix = resultMatrix
+        result.rows = self.rows
+        result.cols = self.cols
+        return result
+    
+    def __rsub__(self, other):
+        """Can't just call __sub__ because subtraction is not commutative"""
+        if not (isNum(other) or isinstance(other, Matrix)):
+            raise TypeError("Operand is not a Matrix or number")
+        # uses short circuit logic
+        if isinstance(other, Matrix) and (self.rows != other.rows or self.cols != other.cols):
+            raise DimensionError("Dimensions of the matrices don't match")
+
+        thisMatrix = self.matrix
+        if isNum(other):
+            resultMatrix = [other - element for element in thisMatrix]
+        else:
+            otherMatrix = other.matrix
+            resultMatrix = [otherMatrix[otherIndex] - thisElement for otherIndex, thisElement in enumerate(thisMatrix)]
+        
+        # uses internal structure of Matrix
+        result = Matrix()
+        result.matrix = resultMatrix
+        result.rows = self.rows
+        result.cols = self.cols
+        return result
         
     def __mul__(self, other):
         """
         Overloads the * operator. Does matrix multiplication.
         __rmul__ for scalar multiplication when the scalar is on the left
         """
-        
-        matrix = []
         if isNum(other):
-            matrix = [self.matrix[i]*other for i in range(len(self.matrix))]
+            result = Matrix([self.matrix[i]*other for i in range(len(self.matrix))])
+            result.rows = self.rows
+            result.cols = self.cols
+            return result
         elif isinstance(other, Matrix):
             if self.cols != other.rows:
                 raise DimensionError("Number of rows of A != to number of columns of B")
             else:
-                numRows = self.rows
-                numCols = self.cols
-                for rowNum in range(numRows):
-                    row = self.matrix[rowNum * numCols:rowNum * numCols + numCols]
-                    for colNum in range(numRows):
-                        col = other.matrix[colNum::other.cols]
-                        sum = 0
-                        for i in range(numCols):
-                            sum += row[i]*col[i] 
-                        matrix.append(sum)
-                result = Matrix(matrix)
-                result.order = 2
+                leftRows = [self.matrix[i*self.cols: i*self.cols + self.cols] for i in range(self.rows)]
+                
+                rightCols = [other.matrix[i::other.cols] for i in range(other.cols)]
+                result = [self._dot(leftRows[i], rightCols[j]) for i in range(len(leftRows)) for j in range(len(rightCols))]
+                # uses internal structure of Matrix
+                result = Matrix(result)
                 result.rows = self.rows
                 result.cols = other.cols
-                
-                
-                leftRows = [self.matrix[i*self.cols: i*self.cols + self.cols] for i in range(self.rows)]
-                rightCols = [self.matrix[i::other.cols] for i in range(other.cols)]
-                result = [zip(leftRows[i], rightCols[i]) for i in range(self.rows)]
-                result = [i[0]*i[1] for item in result for i in item]
-                
+                return result
+    
+    def __rmul__(self, other):
+        """
+        Used for scalar multiplication when a scalar is the left operand
+        """
+        return self.__mul__(other)
+    
+    def __str__(self):
+        """
+        Prints out the matrix, not too nice looking since it uses a space between
+        each number
+        """
+        result = "[\n"
+        for i in range(self.rows):
+            for j in range(self.cols):
+                result += " " + str(self.matrix[i * self.cols + j])
+            result += "\n"
+        result += "]"
+        return result
+    
+    def _dot(self, v1, v2):
+        """
+        v1 and v2 are arrays of the same length
+        returns dot product of them.
+        This is a private helper method used in __mul__
+        Probably get rid of this later
+        """
+        return sum([v1[i] * v2[i] for i in range(len(v1))])
+    
+    def multiply(self, other):
+        """
+        Elementwise subtraction for Matrix 's only.
+        """
+        if not isinstance(other, Matrix):
+            raise TypeError("Operand is not a Matrix")
+        elif self.rows != other.rows or self.cols != other.cols:
+            raise DimensionError("Dimensions of matrices don't match")
+        
+        matrices = zip(self.matrix, other.matrix)
+        resultMatrix = [this * other for this, other in matrices]
+        # uses internal structure of Matrix
+        result = Matrix()
+        result.matrix = resultMatrix
+        result.rows = self.rows
+        result.cols = self.cols
         return result
     
     def dot(self, other):
+        """
+        Dot products vectors
+        """
         if not isinstance(other, Matrix):
             raise TypeError('Right operand is not a Matrix')
         if self.rows != 1 and self.cols != 1:
@@ -415,23 +499,31 @@ class Matrix:
 
     
     def transpose(self):
-        """Transposes current matrix"""
-        matrix = []
-        for i in range(self.cols):
-            matrix += self.matrix[i::self.cols]
-        self.matrix = matrix
-        cols = self.cols
-        self.cols = self.rows
-        self.rows = cols
+        """Return a Matrix that is the transpose of self"""
+        cols = [self.matrix[i::self.cols] for i in range(self.cols)]
+        transpose = []
+        for col in cols:
+            transpose.append(col)
+        
+        return Matrix(transpose)
     
     def randomize(self):
         for i in range(len(self.matrix)):
             self.matrix[i] = random.random()
+
+    def clone(self):
+        matrix = self.matrix[:]
+        result = Matrix(matrix)
+        result.rows = self.rows
+        result.cols = self.cols
+        return result
+        
     
 class NeuralNetwork:
     """A feedforward neural network"""
     def __init__(self, topology):
         """Sets up relevant matrices/vectors for the neural network"""
+            
         # topology = [#inputs, #hidden nodes, ..., #hidden nodes, #outputs]
         self.topology = topology
 
@@ -439,45 +531,72 @@ class NeuralNetwork:
         # each node layer is represented by a vector matrix
         # each element in the vector matrix represents an individual node
         # vectors in these lists are assumed as row vectors
-        self.inputVectorList = []
-        self.outputVectorList = []
-        self.deltaVectorList = []
+        # we count the input and output layers as a node layer
+        self.inputsList = [None for i in range(len(topology))]
+        self.outputsList = [None for i in range(len(topology))]
+        # note: first index of deltasList is never used
+        self.deltasList = [None for i in range(len(topology))]
         
         # each element of this list represents a weight matrix
         # each weight matrix represents the connection weights between a node layer
         self.weightMatrixList = []
+        # represents the corrections to the weight matrix after batch or online training
+        self.weightMatrixCorrections = []
         
         # initialize weight matrices, initial matrices are zeroed
         for i in range(len(topology) - 1):
-            self.weightMatrixList.append(Matrix(rows=topology[i], cols=topology[i+1]))
+            # rows is +1 because we are adding weights for the bias too
+            self.weightMatrixList.append(Matrix(rows=topology[i]+1, cols=topology[i+1]))
+            self.weightMatrixList[i][:] = 1
+            self.weightMatrixCorrections.append(Matrix(rows=topology[i]+1, cols=topology[i+1]))
+            
+    @staticmethod
+    def tanh(list):
+        """Takes a list, returns a list"""
+        # not efficient, dont think catastrophic things can occur though
+        return [(math.exp(num)-math.exp(-num))/(math.exp(num)+math.exp(-num)) for num in list]
+    @staticmethod
+    def tanhDerivative(list):
+        """Not too useful"""
+        tanhResults = NeuralNetwork.tanh(list)
+        return [1 - pow(tanhResult,2) for tanhResult in tanhResults] 
 
-
-    def activationFunction(self, input):
-        """The activation function for each node"""
-        None
-        
-    def activationFunctionDerivative(self, input):
-        """The derivative of the activation function"""
-        None
         
     def forwardProp(self, input):
         """
         Forward propagate input through the network, storing inputs and
         outputs for each node in the network
-        """
-        initialInput = Matrix(input)
-        # we have dummy node layer representing the initial input
-        self.inputVectorList.append(initialInput)
-        self.outputVectorList.append(initialInput)
         
-        numWeightLayers = len(self.topology) - 1
-        currentInputList = []
-        for i in range(numWeightLayers):
-            for columnVector in self.weightMatrixList[i]:
-                currentInputList.append(self.outputVectorList[i] * columnVector)
-            currentInputVector = Matrix(currentInputList)
-            self.inputVectorList.append(Matrix(currentInputVector))
-            self.outputVectorList.append(self.activationFunction(Matrix(currentInputVector)))
+        
+        Algorithm:
+        Give input layer input
+        Make first output layer same as input
+        send first output layer to first hidden layer through weight matrix
+        record the activation
+        """
+        if not isinstance(input, list):
+            raise TypeError('forwardProp expects a list for input')
+        
+        
+        self.inputsList[0] = Matrix(input)
+        output = input[:]
+        output.append(1)
+        # add the bias
+        self.outputsList[0] = Matrix(output)
+        
+        for i in range(len(self.weightMatrixList)):
+            
+            self.inputsList[i+1] = self.outputsList[i]*self.weightMatrixList[i]
+            # output of node layer without bias
+            output = self.tanh(self.inputsList[i+1].matrix)
+            # output of node layer with bias 
+            output.append(1)
+            self.outputsList[i+1] = Matrix(output)
+        # this is important cause the output layer doesn't do anything to the
+        # inputs it gets
+        # we don't need to add a bias to the output 
+        self.outputsList[-1] = self.inputsList[-1]
+
 
     def backwardProp(self, target):
         """
@@ -488,17 +607,92 @@ class NeuralNetwork:
         - that the input, output vector lists have been initialized by
         forwardProp
         """
-        targetVector = Matrix(target)
         
-        # calculate the initial deltas for the output layer
-        self.deltaVectorList.prepend(self.outputVectorList[-1] - targetVector)
-        numWeightLayers = len(self.topology) - 1
         
-        for i in range(numWeightLayers):
-            deltaVector = self.weightMatrixList[-1 - i] * self.deltaVectorList[-1 - i].transpose()
-            deltaVector.transpose()
-            self.deltaVectorList[-1 - i].transpose()
-            self.deltaVectorList.prepend(deltaVector)
+        # TODO: store the dError/dweights into a matrix of their own (or apply them
+        # to the weight matrices directly if we're doing online training)
+        
+#        calculate the deltas for the output layer
+#        for each hidden layer
+#            calculate the deltas for that hidden layer using the deltas in the
+#            layer ahead of it
+        #    delta_j = h'(a_j) * sum(wjk * delta_k)
+        
+        # calculate the deltas for the output layer
+        self.deltasList[-1] = self.outputsList[-1] - Matrix(target)
+        for i in reversed(range(1, len(self.topology) - 1)):
+            product = (self.weightMatrixList[i] * self.deltasList[i+1].tranpose()).transpose()
+            # the deltas are row vectors
+            self.deltasList[i] = (1-self.outputsList[i]).multiply(product)
+            
+        for i in reversed(range(len(self.weightMatrixList))):
+            self.weightMatrixCorrections[i] = self.outputsList[i].transpose() * self.deltasList[i+1]
+        
+        
+        # weight matrix corrections are wij = xi * delta_j
+        # so
+        # w00 = x0 * delta_0 w01 = x0 * delta_1
+        # w10 = x1 * delta_0 w11 = x1 * delta_1
+        # w20 = x2 * delta_0 w21 = x2 * delta_1
+        #
+        # outputs xi are all row vectors
+        # deltas delta_i are all row vectors
+        #
+        #
+        #
+        
+def trainOnline(nn, dataset, targets):
+    """
+    Takes a NeuralNetwork and a dataset, and targets lists of lists
+    The dataset and targets lists should match in length and each element
+    of each list should have the same length as well.
+    """
+    for data, target in zip(dataset, targets):
+        nn.forwardProp(data)
+        nn.backwardProp(target)
+        for weightMatrix, correction in zip(nn.weightMatrixList, nn.weightMatrixCorrections):
+            weightMatrix = weightMatrix - correction
+        
+    
+            
+        
+            
+
+
+class NeuralNetworkTest(unittest.TestCase):
+    def test__init__(self):
+        nn = NeuralNetwork([2, 2, 2])
+        self.assertEquals(nn.topology, [2,2,2])
+        self.assertEquals(nn.inputsList, [None, None, None])
+        self.assertEquals(nn.outputsList, [None, None, None])
+        m1 = Matrix(rows=3, cols=2)
+        m1[:] = 1
+        
+        self.assertEquals(nn.weightMatrixList[0], m1)
+        self.assertEquals(nn.weightMatrixList[1], m1)
+        self.assertEquals(len(nn.weightMatrixList), 2)
+
+    def testForwardProp(self):
+        self.assertEquals(NeuralNetwork.tanhDerivative([1]), [0.41997434161402614])
+        self.assertEquals(NeuralNetwork.tanh([1]), [0.7615941559557649])
+        # apparently not like C, where their numbers are sometimes held in special cpu
+        # registers. but maybe it is like that and doesn't manifest on this machine
+        self.assertEquals(NeuralNetwork.tanh([2,2]), [0.964027580075817,0.964027580075817])
+        nn = NeuralNetwork([2, 2, 2])
+        nn.weightMatrixList[0][:] = 0
+        nn.weightMatrixList[1][:] = 0
+        nn.forwardProp([0,0])
+        self.assertEquals(nn.outputsList, [Matrix([0,0,1]), Matrix([0,0,1]), Matrix([0,0])])
+        self.assertEquals(nn.inputsList, [Matrix([0,0]), Matrix([0,0]), Matrix([0,0])])
+        nn = NeuralNetwork([1,3,3])
+        nn.forwardProp([1])
+        
+        self.assertEquals(nn.outputsList[0], Matrix([1, 1]))
+        self.assertEquals(nn.outputsList[1], Matrix([0.964027580075817,0.964027580075817,0.964027580075817,1]))
+        self.assertEquals(nn.outputsList[2], Matrix([3.892082740227451,3.892082740227451,3.892082740227451]))
+
+        
+        
 
 class MatrixTest(unittest.TestCase): 
     def testMatrix(self):
@@ -682,39 +876,74 @@ class MatrixTest(unittest.TestCase):
 
 
     def test__add__(self):
-        """Matrices of the same dimensions should be added"""
+        """Tests __radd__ too"""
         self.assertEquals(Matrix([1, 2, 3]) + Matrix([1, 2, 3]), Matrix([2, 4, 6]))
         m1 = Matrix([[1, 2], [3, 4]])
         m2 = Matrix([[1, 2], [3, 4]])
         self.assertEquals(m1 + m2, Matrix([[2, 4], [6, 8]]))
+        m1 = Matrix([[1,2],[3,4],[5,6]])
+        self.assertEquals(m1 + 1, Matrix([[2,3],[4,5],[6,7]]))
+        self.assertEquals(1 + m1, Matrix([[2,3],[4,5],[6,7]]))
         
-#    def testMulMatrix(self):
-#        """Matrices of compatible dimensions should be multiplied"""
-#        m1 = Matrix([[1, 2, 3], [4, 5, 6]])
-#        m2 = Matrix([[1, 2], [3, 4], [5, 6]])
-#        m3 = m1*m2
-#        self.assertEquals(m1 * m2, Matrix([[22, 28], [49, 64]]))
-#        
-#    def testTranspose(self):
-#        m = Matrix([[1, 4], [2, 5], [3, 6]])
-#        m.transpose()
-#        self.assertEquals(m, Matrix([[1,2,3],[4,5,6]]))
-#        m.transpose()
-#        self.assertEquals(m, Matrix([[1,4],[2,5],[3,6]]))
-#    def testMalformedMatrixInit(self):
-#        """Malformed matrices should raise exceptions"""
-#        self.assertRaises(MalformedMatrix, Matrix, [[1], 2])
-#        self.assertRaises(MalformedMatrix, Matrix, [[]])
-#        self.assertRaises(MalformedMatrix, Matrix, [[[1]]])
-#        self.assertRaises(MalformedMatrix, Matrix, [[1], [2, 3], [4, 5]])
-#
-#    def testDimensionErrorAdd(self):
-#        """Operations with matrices that don't match should raise exceptions"""
-#        m1 = Matrix([1])
-#        self.assertRaises(DimensionError, m1.__add__, Matrix([1, 2]))
-#        m1 = Matrix([1, 2])
-#        m2 = Matrix([1, 2])
-#        self.assertRaises(DimensionError, m1.__mul__, m2)
+    def test__sub__(self):
+        """Tests __rsub__ too"""
+        self.assertEquals(Matrix([1, 2, 3]) - Matrix([1, 2, 3]), Matrix([0,0,0]))
+        m1 = Matrix([[1, 2], [3, 4]])
+        m2 = Matrix([[1, 2], [3, 4]])
+        self.assertEquals(m1 - m2, Matrix([[0, 0], [0, 0]]))
+        m1 = Matrix([[1,2],[3,4],[5,6]])
+        self.assertEquals(m1 - 1, Matrix([[0,1],[2,3],[4,5]]))
+        self.assertEquals(1 - m1, Matrix([[0,-1],[-2,-3],[-4,-5]]))
+    
+    def testMultiply(self):
+        """Tests elementwise multiply()"""
+        self.assertEquals(Matrix([1,2,3]).multiply(Matrix([1,2,3])), Matrix([1,4,9]))
+        self.assertEquals(Matrix([[1,2,3],[3,2,1]]).multiply(Matrix([[1,2,3],[3,2,1]])),Matrix([[1,4,9],[9,4,1]]))
+
+    def test_dot(self):
+        m1 = Matrix([1,2])
+        m2 = Matrix([[1],[2]])
+        m3 = Matrix([[1,2],[3,4]])
+        # Pass
+        self.assertEquals(m1.dot(m1), 5)
+        self.assertEquals(m1.dot(m2), 5)
+        # Fail
+        self.assertRaises(DimensionError, m3.dot, m1)
+        self.assertRaises(DimensionError, m1.dot, m3)
+        
+    
+    def test__mul__(self):
+        """
+        Tests __rmul__ too
+        """
+        # Pass
+        m1 = Matrix([[1, 2, 3], [4, 5, 6]])
+        m2 = Matrix([[1, 2], [3, 4], [5, 6]])
+        self.assertEquals(m1 * m2, Matrix([[22, 28], [49, 64]]))
+        self.assertEquals(m1 * 2, Matrix([[2,4,6],[8,10,12]]))
+        self.assertEquals(2 * m1, Matrix([[2,4,6],[8,10,12]]))
+        
+        
+        m1 = Matrix([0, 0, 0])
+        m2 = Matrix([[0,0],[0,0],[0,0]])
+        
+        self.assertEquals(m1*m2, Matrix([0,0]))
+        
+        m1 = Matrix([[1],[2]])
+        m2 = Matrix([3,4])
+        self.assertEquals(m1*m2, Matrix([[3,4],[6,8]]))
+        # Fail
+        self.assertRaises(DimensionError, m1.__mul__, m1)
+
+    def testTranspose(self):
+        m = Matrix([[1, 4], [2, 5], [3, 6]])
+        self.assertEquals(m.transpose(), Matrix([[1,2,3],[4,5,6]]))
+        self.assertEquals(m.transpose().transpose(), m)
+
+    def test__str__(self):
+        m = Matrix([[1,4], [2, 5], [3, 6]])
+        self.assertEquals(m.__str__(), "[\n 1 4\n 2 5\n 3 6\n]")
+
 
 if __name__ == "__main__":
     unittest.main()
